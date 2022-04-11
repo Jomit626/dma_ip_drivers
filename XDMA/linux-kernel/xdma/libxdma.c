@@ -2448,6 +2448,8 @@ static int transfer_queue(struct xdma_engine *engine,
 			  struct xdma_transfer *transfer)
 {
 	int rv = 0;
+	int last_desc = 0;
+	int control = 0;
 	struct xdma_transfer *transfer_started;
 	struct xdma_dev *xdev;
 	unsigned long flags;
@@ -2493,6 +2495,17 @@ static int transfer_queue(struct xdma_engine *engine,
 			engine->name, transfer);
 		rv = -EBUSY;
 		goto shutdown;
+	}
+
+	/* set EOP on last transfer for a write syscall */
+	if(engine->streaming && transfer->dir == DMA_TO_DEVICE && transfer->last_in_request) {
+		last_desc = transfer->desc_adjacent - 1;
+		control = XDMA_DESC_STOPPED;
+		control |= XDMA_DESC_EOP;
+		control |= XDMA_DESC_COMPLETED;
+		xdma_desc_control_set(transfer->desc_virt + last_desc, control);
+
+		dbg_desc("EOP for desc %p of transfer 0x%p \n", transfer->desc_virt + last_desc, transfer);
 	}
 
 	/* mark the transfer as submitted */
@@ -3003,7 +3016,6 @@ static int transfer_init(struct xdma_engine *engine,
 	last = desc_max - 1;
 	/* stop engine, EOP for AXI ST, req IRQ on last descriptor */
 	control = XDMA_DESC_STOPPED;
-	control |= XDMA_DESC_EOP;
 	control |= XDMA_DESC_COMPLETED;
 	xdma_desc_control_set(xfer->desc_virt + last, control);
 
